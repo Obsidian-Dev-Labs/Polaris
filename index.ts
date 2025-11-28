@@ -1,3 +1,19 @@
+import {
+  rand,
+  _Promise,
+  _Proxy,
+  _WeakRef,
+  _catch,
+  _finally,
+  then,
+  isObject,
+  deref,
+  apply,
+  construct,
+  array,
+  set,
+  skip,
+} from "./utils.ts";
 type ObjTy = "object" | "function" | "symbol";
 type Core =
   | { local: string; type: ObjTy }
@@ -12,30 +28,6 @@ type Packet =
   | [1, string, ...ObjectRefPacket]
   | [2, string, ...ObjectRefPacket, ...ObjectRefPacket]
   | [3, string, ...ObjectRefPacket, ...ObjectRefPacket, ...ObjectRefPackets];
-const rand = crypto.randomUUID.bind(crypto);
-const _WeakRef = WeakRef;
-const _Proxy = Proxy;
-const _Promise = Promise;
-const then = _Promise.prototype.then.call.bind(_Promise.prototype.then);
-const _catch = _Promise.prototype.catch.call.bind(_Promise.prototype.catch);
-const _finally = _Promise.prototype.finally.call.bind(
-  _Promise.prototype.finally
-);
-const deref: <T extends WeakKey>(ref: WeakRef<T>) => T | undefined =
-  WeakRef.prototype.deref.call.bind(WeakRef.prototype.deref) as any;
-const isObject = (a: any): boolean =>
-  typeof a === "object" || typeof a === "function" || typeof a === "symbol";
-const array: any = (...args: any[]) => args;
-function* skip<T, A extends T[]>(
-  a: A,
-  n: number = 0
-): Generator<T, void, void> {
-  while (n !== a.length) {
-    yield a[n];
-    n++;
-  }
-}
-const { set, apply, construct } = Reflect;
 
 export class Reactor {
   readonly #unsync: boolean;
