@@ -7,7 +7,10 @@ type ObjectRefPacket =
   | [1, string | number | boolean | null | undefined]
   | [2, ObjTy, string];
 type ObjectRefPackets = any[]; //TODO: fix
-type Packet = [0, boolean, string] | [1, string, ...ObjectRefPacket];
+type Packet =
+  | [0, boolean, string]
+  | [1, string, ...ObjectRefPacket]
+  | [2, string, ...ObjectRefPacket, ...ObjectRefPacket];
 const rand = crypto.randomUUID.bind(crypto);
 const _WeakRef = WeakRef;
 const deref: <T extends WeakKey>(ref: WeakRef<T>) => T | undefined =
@@ -21,6 +24,7 @@ function* skip<T, A extends T[]>(a: A, n: number): Generator<T, void, void> {
     n++;
   }
 }
+const { set } = Reflect;
 export class Reactor {
   readonly #coreMap: WeakMap<WeakKey, Core> = new WeakMap();
   readonly #coreMapGet: (a: WeakKey) => Core | undefined =
@@ -127,6 +131,14 @@ export class Reactor {
           );
           return this.#proxyPacket(packet);
         },
+        set: (target, p, newValue, reciever) =>
+          this.#socket(
+            array(
+              2,
+              a,
+              ...[...this.#getObjectRef(p), ...this.#getObjectRef(newValue)]
+            )
+          ),
       }
     );
     this.#remoteObjects[a] = new _WeakRef(proxy);
@@ -143,11 +155,17 @@ export class Reactor {
         case 0:
           (msg[1] ? this.#holdObject : this.#releaseObject)(msg[2]);
           return;
-        case 1:
+        case 1: {
           const obj = deref(this.#objects[msg[1]]);
           return this.#getObjectRef(
             obj?.[this.#getObjectFromRef([...skip(msg, 2)] as ObjectRefPacket)]
           );
+        }
+        case 2: {
+          const obj = deref(this.#objects[msg[1]]);
+          const [mem, val] = this.#getObjectsFromRef([...skip(msg, 2)]);
+          return set(obj, mem, val);
+        }
       }
     };
   }
