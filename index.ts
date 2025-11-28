@@ -6,6 +6,7 @@ type ObjectRefPacket =
   | [0, ObjTy, string]
   | [1, string | number | boolean | null | undefined]
   | [2, ObjTy, string];
+type ObjectRefPackets = any[]; //TODO: fix
 type Packet = [0, boolean, string] | [1, string, ...ObjectRefPacket];
 const rand = crypto.randomUUID.bind(crypto);
 const _WeakRef = WeakRef;
@@ -14,6 +15,12 @@ const deref: <T extends WeakKey>(ref: WeakRef<T>) => T | undefined =
 const isObject = (a: any): boolean =>
   typeof a === "object" || typeof a === "function" || typeof a === "symbol";
 const array: any = (...args: any[]) => args;
+function* skip<T, A extends T[]>(a: A, n: number): Generator<T, void, void> {
+  while (n !== a.length) {
+    yield a[n];
+    n++;
+  }
+}
 export class Reactor {
   readonly #coreMap: WeakMap<WeakKey, Core> = new WeakMap();
   readonly #coreMapGet: (a: WeakKey) => Core | undefined =
@@ -53,15 +60,26 @@ export class Reactor {
       return [1, a];
     }
   }
+  *#getObjectsFromRef(packet: ObjectRefPackets): Generator<any, void, void> {
+    let i = 0;
+    while (i != packet.length)
+      switch (packet[i]) {
+        case 0:
+          yield deref(this.#objects[packet[i + 2]]);
+          i += 3;
+          break;
+        case 2:
+          yield this.#newProxy(packet[i + 2], packet[i + 1]);
+          i += 3;
+          break;
+        case 1:
+          yield packet[i + 1];
+          i += 2;
+          break;
+      }
+  }
   #getObjectFromRef(packet: ObjectRefPacket): any {
-    switch (packet[0]) {
-      case 0:
-        return deref(this.#objects[packet[2]]);
-      case 2:
-        return this.#newProxy(packet[2], packet[1]);
-      case 1:
-        return packet[1];
-    }
+    return this.#getObjectsFromRef(packet).next().value;
   }
   #holdRemoteObject(a: string) {
     this.#socket([0, true, a]);
@@ -69,15 +87,26 @@ export class Reactor {
   #releaseRemoteObject(a: string) {
     this.#socket([0, false, a]);
   }
-  #proxyPacket(packet: ObjectRefPacket) {
-    switch (packet[0]) {
-      case 0:
-        return this.#newProxy(packet[2], packet[1]);
-      case 2:
-        return deref(this.#objects[packet[2]]);
-      case 1:
-        return packet[1];
-    }
+  *#proxyPackets(packet: ObjectRefPackets): Generator<any, void, void> {
+    let i = 0;
+    while (i != packet.length)
+      switch (packet[i]) {
+        case 0:
+          yield this.#newProxy(packet[i + 2], packet[i + 1]);
+          i += 3;
+          break;
+        case 2:
+          yield deref(this.#objects[packet[i + 2]]);
+          i += 3;
+          break;
+        case 1:
+          yield packet[i + 1];
+          i += 2;
+          break;
+      }
+  }
+  #proxyPacket(packet: ObjectRefPacket): any {
+    return this.#proxyPackets(packet).next().value;
   }
   #newProxy(a: string, type: ObjTy) {
     const d =
@@ -117,13 +146,7 @@ export class Reactor {
         case 1:
           const obj = deref(this.#objects[msg[1]]);
           return this.#getObjectRef(
-            obj?.[
-              this.#getObjectFromRef(
-                (((_0: any, _1: any, ...args: ObjectRefPacket) => args) as any)(
-                  ...msg
-                )
-              )
-            ]
+            obj?.[this.#getObjectFromRef([...skip(msg, 2)] as ObjectRefPacket)]
           );
       }
     };
