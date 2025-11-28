@@ -79,7 +79,7 @@ export class Reactor {
       }
   }
   #getObjectFromRef(packet: ObjectRefPacket): any {
-    return this.#getObjectsFromRef(packet).next().value;
+    for (var x of this.#getObjectsFromRef(packet)) return x;
   }
   #holdRemoteObject(a: string) {
     this.#socket([0, true, a]);
@@ -106,7 +106,7 @@ export class Reactor {
       }
   }
   #proxyPacket(packet: ObjectRefPacket): any {
-    return this.#proxyPackets(packet).next().value;
+    for (var x of this.#proxyPackets(packet)) return x;
   }
   #newProxy(a: string, type: ObjTy) {
     const d =
