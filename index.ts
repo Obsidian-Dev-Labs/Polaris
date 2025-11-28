@@ -1,8 +1,11 @@
 type ObjTy = "object" | "function" | "symbol";
-type Core = { local: string; type: ObjTy };
+type Core =
+  | { local: string; type: ObjTy }
+  | { remote: string; remote_type: ObjTy };
 type ObjectRefPacket =
   | [0, ObjTy, string]
-  | [1, string | number | boolean | null | undefined];
+  | [1, string | number | boolean | null | undefined]
+  | [2, ObjTy, string];
 type Packet = [0, boolean, string] | [1, string, ...ObjectRefPacket];
 const rand = crypto.randomUUID.bind(crypto);
 const _WeakRef = WeakRef;
@@ -36,7 +39,10 @@ export class Reactor {
   #getObjectRef(a: any): ObjectRefPacket {
     if (isObject(a)) {
       const g = this.#coreMapGet(a);
-      if (g) return [0, g.type, g.local];
+      if (g) {
+        if ("remote" in g) return [2, g.remote_type, g.remote];
+        return [0, g.type, g.local];
+      }
       const s = rand();
       this.#coreMapSet(a, {
         local: ((this.#objects[s] = new _WeakRef(a)), s),
@@ -47,12 +53,14 @@ export class Reactor {
       return [1, a];
     }
   }
-  #getObjectFromRef(p: ObjectRefPacket): any {
-    switch (p[0]) {
+  #getObjectFromRef(packet: ObjectRefPacket): any {
+    switch (packet[0]) {
       case 0:
-        return deref(this.#objects[p[1]]);
+        return deref(this.#objects[packet[2]]);
+      case 2:
+        return this.#newProxy(packet[2], packet[1]);
       case 1:
-        return p[1];
+        return packet[1];
     }
   }
   #holdRemoteObject(a: string) {
@@ -61,12 +69,14 @@ export class Reactor {
   #releaseRemoteObject(a: string) {
     this.#socket([0, false, a]);
   }
-  #proxyPacket(a: ObjectRefPacket) {
-    switch (a[0]) {
+  #proxyPacket(packet: ObjectRefPacket) {
+    switch (packet[0]) {
       case 0:
-        return this.#newProxy(a[2], a[1]);
+        return this.#newProxy(packet[2], packet[1]);
+      case 2:
+        return deref(this.#objects[packet[2]]);
       case 1:
-        return a[1];
+        return packet[1];
     }
   }
   #newProxy(a: string, type: ObjTy) {
@@ -92,6 +102,7 @@ export class Reactor {
     );
     this.#remoteObjects[a] = new _WeakRef(proxy);
     this.#remoteRegister(proxy, a);
+    this.#coreMapSet(proxy, { remote: a, remote_type: type });
     return proxy;
   }
   constructor(socket: (msg: Packet) => any) {
