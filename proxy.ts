@@ -87,7 +87,7 @@ export class Reactor {
             a,
             ...this.#getObjectRef(p),
           ]);
-          this.#proxyPacket(packet);
+          return this.#proxyPacket(packet);
         },
       }
     );
