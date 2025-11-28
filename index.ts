@@ -14,19 +14,31 @@ type Packet =
   | [3, string, ...ObjectRefPacket, ...ObjectRefPacket, ...ObjectRefPackets];
 const rand = crypto.randomUUID.bind(crypto);
 const _WeakRef = WeakRef;
+const _Proxy = Proxy;
+const _Promise = Promise;
+const then = _Promise.prototype.then.call.bind(_Promise.prototype.then);
+const _catch = _Promise.prototype.catch.call.bind(_Promise.prototype.catch);
+const _finally = _Promise.prototype.finally.call.bind(
+  _Promise.prototype.finally
+);
 const deref: <T extends WeakKey>(ref: WeakRef<T>) => T | undefined =
   WeakRef.prototype.deref.call.bind(WeakRef.prototype.deref) as any;
 const isObject = (a: any): boolean =>
   typeof a === "object" || typeof a === "function" || typeof a === "symbol";
 const array: any = (...args: any[]) => args;
-function* skip<T, A extends T[]>(a: A, n: number = 0): Generator<T, void, void> {
+function* skip<T, A extends T[]>(
+  a: A,
+  n: number = 0
+): Generator<T, void, void> {
   while (n !== a.length) {
     yield a[n];
     n++;
   }
 }
 const { set, apply, construct } = Reflect;
+
 export class Reactor {
+  readonly #unsync: boolean;
   readonly #coreMap: WeakMap<WeakKey, Core> = new WeakMap();
   readonly #coreMapGet: (a: WeakKey) => Core | undefined =
     this.#coreMap.get.bind(this.#coreMap);
@@ -113,42 +125,66 @@ export class Reactor {
   #proxyPacket(packet: ObjectRefPacket): any {
     for (var x of this.#proxyPackets(packet)) return x;
   }
+  #deferredPromise<T>(a: Promise<T>): Promise<T> {
+    return new _Proxy(a, {
+      get: (target, p, receiver) =>
+        this.#deferredPromise(
+          then(target, async (v: any) => v[await p]) as Promise<any>
+        ),
+      apply: (target, self, args) =>
+        this.#deferredPromise(
+          then(target, async (v: any) =>
+            apply(v, await self, args)
+          ) as Promise<any>
+        ),
+      construct: (target, args, new_target) =>
+        this.#deferredPromise(
+          then(target, async (v: any) =>
+            construct(v, args, await new_target)
+          ) as Promise<any>
+        ),
+    });
+  }
+  #unsyncMap<T>(a: any, f: (a: any) => T): T | Promise<T> {
+    if (this.#unsync)
+      return this.#deferredPromise(then(a, (a: any) => f(a)) as Promise<T>);
+    return f(a);
+  }
   #newProxy(a: string, type: ObjTy) {
     const d =
       a in this.#remoteObjects ? deref(this.#remoteObjects[a]) : undefined;
     if (d !== undefined) return d;
     this.#holdRemoteObject(a);
-    const proxy = new Proxy(
+    const proxy = new _Proxy(
       type === "object"
         ? { __proto__: null }
         : ((r) =>
             function (this: any, ...args: any[]) {
               const self = this;
               const target = new.target;
-              return r.#proxyPacket(
-                r.#socket(
-                  array(
-                    3,
-                    a,
-                    ...[
-                      ...skip(r.#getObjectRef(self)),
-                      ...skip(r.#getObjectRef(target)),
-                      ...(function* () {
-                        for (var arg of skip(args))
-                          for (var packet of skip(r.#getObjectRef(arg)))
-                            yield packet;
-                      })(),
-                    ]
-                  )
+              const packet = r.#socket(
+                array(
+                  3,
+                  a,
+                  ...[
+                    ...skip(r.#getObjectRef(self)),
+                    ...skip(r.#getObjectRef(target)),
+                    ...(function* () {
+                      for (var arg of skip(args))
+                        for (var packet of skip(r.#getObjectRef(arg)))
+                          yield packet;
+                    })(),
+                  ]
                 )
               );
+              return r.#unsyncMap(packet, (a) => r.#proxyPacket(a));
             })(this),
       {
         get: (target, p, receiver) => {
           const packet: ObjectRefPacket = this.#socket(
             array(1, a, ...this.#getObjectRef(p))
           );
-          return this.#proxyPacket(packet);
+          return this.#unsyncMap(packet, (a) => this.#proxyPacket(a));
         },
         set: (target, p, newValue, reciever) =>
           this.#socket(
@@ -168,8 +204,12 @@ export class Reactor {
     this.#coreMapSet(proxy, { remote: a, remote_type: type });
     return proxy;
   }
-  constructor(socket: (msg: Packet) => any) {
+  constructor(
+    socket: (msg: Packet) => any,
+    { unsync = false }: { unsync?: boolean } = {}
+  ) {
     this.#socket = socket;
+    this.#unsync = unsync;
   }
   get handler() {
     return (msg: Packet) => {
