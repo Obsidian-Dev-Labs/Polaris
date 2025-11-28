@@ -45,6 +45,11 @@ export class Reactor {
   readonly #coreMapSet: (a: WeakKey, c: Core) => void = this.#coreMap.set.bind(
     this.#coreMap
   );
+  readonly #promiseObjects: WeakSet<Promise<any>> = new WeakSet();
+  readonly #promiseObjectsHas: (v: Promise<any>) => boolean =
+    this.#promiseObjects.has.bind(this.#promiseObjects);
+  readonly #promiseObjectsAdd: (v: Promise<any>) => void =
+    this.#promiseObjects.add.bind(this.#promiseObjects);
   readonly #remoteReg = new FinalizationRegistry<string>((a) =>
     this.#releaseRemoteObject(a)
   );
@@ -126,31 +131,33 @@ export class Reactor {
     for (var x of this.#proxyPackets(packet)) return x;
   }
   #deferredPromise<T>(a: Promise<T>): Promise<T> {
-    return new _Proxy(a, {
+    const proxy = new _Proxy(a, {
       get: (target, p, receiver) =>
         p === "then"
-          ? (...args: any[]) => then(p, ...args)
+          ? target.then
           : this.#deferredPromise(
-              then(target, async (v: any) => v[await p]) as Promise<any>
+              then(target, (v: any) => v[p]) as Promise<any>
             ),
       apply: (target, self, args) =>
         this.#deferredPromise(
-          then(target, async (v: any) =>
-            apply(v, await self, args)
-          ) as Promise<any>
+          then(target, (v: any) => apply(v, self, args)) as Promise<any>
         ),
       construct: (target, args, new_target) =>
         this.#deferredPromise(
-          then(target, async (v: any) =>
-            construct(v, args, await new_target)
+          then(target, (v: any) =>
+            construct(v, args, new_target)
           ) as Promise<any>
         ),
     });
+    this.#promiseObjectsAdd(proxy);
+    return proxy;
   }
-  #unsyncMap<T>(a: any, f: (a: any) => T): T | Promise<T> {
+  #unsyncMap<T>(value: any, process: (value: any) => T): T | Promise<T> {
     if (this.#unsync)
-      return this.#deferredPromise(then(a, (a: any) => f(a)) as Promise<T>);
-    return f(a);
+      return this.#deferredPromise(
+        then(value, (a: any) => process(a)) as Promise<T>
+      );
+    return process(value);
   }
   #newProxy(a: string, type: ObjTy) {
     const d =
@@ -213,35 +220,76 @@ export class Reactor {
     this.#socket = socket;
     this.#unsync = unsync;
   }
-  get handler() {
-    return (msg: Packet) => {
-      switch (msg[0]) {
-        case 0:
-          (msg[1] ? this.#holdObject : this.#releaseObject)(msg[2]);
-          return;
-        case 1: {
-          const obj = deref(this.#objects[msg[1]]);
-          return this.#getObjectRef(
-            obj?.[this.#proxyPacket([...skip(msg, 2)] as ObjectRefPacket)]
-          );
-        }
-        case 2: {
-          const obj = deref(this.#objects[msg[1]]);
-          const [mem, val] = this.#proxyPackets([...skip(msg, 2)]);
-          return set(obj, mem, val);
-        }
-        case 3: {
-          const obj = deref(this.#objects[msg[1]]);
-          const [self, new_target, ...args] = this.#proxyPackets([
-            ...skip(msg, 2),
-          ]);
-          if (new_target === undefined) {
-            return this.#getObjectRef(apply(obj, self, args));
-          } else {
-            return this.#getObjectRef(construct(obj, args, new_target));
+  #coreHandler = (msg: Packet) => {
+    switch (msg[0]) {
+      case 0:
+        (msg[1] ? this.#holdObject : this.#releaseObject)(msg[2]);
+        return;
+    }
+  };
+  handler({ unsync = this.#unsync }: { unsync?: boolean } = {}) {
+    if (unsync) {
+      return async (msg: Packet) => {
+        switch (msg[0]) {
+          case 1: {
+            const obj = deref(this.#objects[msg[1]]);
+            const x =
+              obj?.[this.#proxyPacket([...skip(msg, 2)] as ObjectRefPacket)];
+            return this.#getObjectRef(
+              isObject(x) && this.#promiseObjectsHas(x) ? await x : x
+            );
           }
+          case 2: {
+            const obj = deref(this.#objects[msg[1]]);
+            const [mem, val] = this.#proxyPackets([...skip(msg, 2)]);
+            return set(obj, mem, val);
+          }
+          case 3: {
+            const obj = deref(this.#objects[msg[1]]);
+            const [self, new_target, ...args] = this.#proxyPackets([
+              ...skip(msg, 2),
+            ]);
+            const x: any =
+              new_target === undefined
+                ? apply(obj, self, args)
+                : construct(obj, args, new_target);
+            return this.#getObjectRef(
+              isObject(x) && this.#promiseObjectsHas(x) ? await x : x
+            );
+          }
+          default:
+            return this.#coreHandler(msg);
         }
-      }
-    };
+      };
+    } else {
+      return (msg: Packet) => {
+        switch (msg[0]) {
+          case 1: {
+            const obj = deref(this.#objects[msg[1]]);
+            return this.#getObjectRef(
+              obj?.[this.#proxyPacket([...skip(msg, 2)] as ObjectRefPacket)]
+            );
+          }
+          case 2: {
+            const obj = deref(this.#objects[msg[1]]);
+            const [mem, val] = this.#proxyPackets([...skip(msg, 2)]);
+            return set(obj, mem, val);
+          }
+          case 3: {
+            const obj = deref(this.#objects[msg[1]]);
+            const [self, new_target, ...args] = this.#proxyPackets([
+              ...skip(msg, 2),
+            ]);
+            if (new_target === undefined) {
+              return this.#getObjectRef(apply(obj, self, args));
+            } else {
+              return this.#getObjectRef(construct(obj, args, new_target));
+            }
+          }
+          default:
+            return this.#coreHandler(msg);
+        }
+      };
+    }
   }
 }
