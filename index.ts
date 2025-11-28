@@ -10,7 +10,8 @@ type ObjectRefPackets = any[]; //TODO: fix
 type Packet =
   | [0, boolean, string]
   | [1, string, ...ObjectRefPacket]
-  | [2, string, ...ObjectRefPacket, ...ObjectRefPacket];
+  | [2, string, ...ObjectRefPacket, ...ObjectRefPacket]
+  | [3, string, ...ObjectRefPacket, ...ObjectRefPacket, ...ObjectRefPackets];
 const rand = crypto.randomUUID.bind(crypto);
 const _WeakRef = WeakRef;
 const deref: <T extends WeakKey>(ref: WeakRef<T>) => T | undefined =
@@ -18,13 +19,13 @@ const deref: <T extends WeakKey>(ref: WeakRef<T>) => T | undefined =
 const isObject = (a: any): boolean =>
   typeof a === "object" || typeof a === "function" || typeof a === "symbol";
 const array: any = (...args: any[]) => args;
-function* skip<T, A extends T[]>(a: A, n: number): Generator<T, void, void> {
+function* skip<T, A extends T[]>(a: A, n: number = 0): Generator<T, void, void> {
   while (n !== a.length) {
     yield a[n];
     n++;
   }
 }
-const { set } = Reflect;
+const { set, apply, construct } = Reflect;
 export class Reactor {
   readonly #coreMap: WeakMap<WeakKey, Core> = new WeakMap();
   readonly #coreMapGet: (a: WeakKey) => Core | undefined =
@@ -120,10 +121,28 @@ export class Reactor {
     const proxy = new Proxy(
       type === "object"
         ? { __proto__: null }
-        : function (this: any, ...args: any[]) {
-            const self = this;
-            const target = new.target;
-          },
+        : ((r) =>
+            function (this: any, ...args: any[]) {
+              const self = this;
+              const target = new.target;
+              return r.#proxyPacket(
+                r.#socket(
+                  array(
+                    3,
+                    a,
+                    ...[
+                      ...skip(r.#getObjectRef(self)),
+                      ...skip(r.#getObjectRef(target)),
+                      ...(function* () {
+                        for (var arg of skip(args))
+                          for (var packet of skip(r.#getObjectRef(arg)))
+                            yield packet;
+                      })(),
+                    ]
+                  )
+                )
+              );
+            })(this),
       {
         get: (target, p, receiver) => {
           const packet: ObjectRefPacket = this.#socket(
@@ -136,7 +155,10 @@ export class Reactor {
             array(
               2,
               a,
-              ...[...this.#getObjectRef(p), ...this.#getObjectRef(newValue)]
+              ...[
+                ...skip(this.#getObjectRef(p)),
+                ...skip(this.#getObjectRef(newValue)),
+              ]
             )
           ),
       }
@@ -165,6 +187,17 @@ export class Reactor {
           const obj = deref(this.#objects[msg[1]]);
           const [mem, val] = this.#getObjectsFromRef([...skip(msg, 2)]);
           return set(obj, mem, val);
+        }
+        case 3: {
+          const obj = deref(this.#objects[msg[1]]);
+          const [self, new_target, ...args] = this.#getObjectsFromRef([
+            ...skip(msg, 2),
+          ]);
+          if (new_target === undefined) {
+            return this.#getObjectRef(apply(obj, self, args));
+          } else {
+            return this.#getObjectRef(construct(obj, args, new_target));
+          }
         }
       }
     };
