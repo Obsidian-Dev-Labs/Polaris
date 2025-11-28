@@ -180,17 +180,17 @@ export class Reactor {
         case 1: {
           const obj = deref(this.#objects[msg[1]]);
           return this.#getObjectRef(
-            obj?.[this.#getObjectFromRef([...skip(msg, 2)] as ObjectRefPacket)]
+            obj?.[this.#proxyPacket([...skip(msg, 2)] as ObjectRefPacket)]
           );
         }
         case 2: {
           const obj = deref(this.#objects[msg[1]]);
-          const [mem, val] = this.#getObjectsFromRef([...skip(msg, 2)]);
+          const [mem, val] = this.#proxyPackets([...skip(msg, 2)]);
           return set(obj, mem, val);
         }
         case 3: {
           const obj = deref(this.#objects[msg[1]]);
-          const [self, new_target, ...args] = this.#getObjectsFromRef([
+          const [self, new_target, ...args] = this.#proxyPackets([
             ...skip(msg, 2),
           ]);
           if (new_target === undefined) {
