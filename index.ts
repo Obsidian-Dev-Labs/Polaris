@@ -128,9 +128,11 @@ export class Reactor {
   #deferredPromise<T>(a: Promise<T>): Promise<T> {
     return new _Proxy(a, {
       get: (target, p, receiver) =>
-        this.#deferredPromise(
-          then(target, async (v: any) => v[await p]) as Promise<any>
-        ),
+        p === "then"
+          ? (...args: any[]) => then(p, ...args)
+          : this.#deferredPromise(
+              then(target, async (v: any) => v[await p]) as Promise<any>
+            ),
       apply: (target, self, args) =>
         this.#deferredPromise(
           then(target, async (v: any) =>
