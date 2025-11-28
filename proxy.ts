@@ -10,6 +10,7 @@ const deref: <T extends WeakKey>(ref: WeakRef<T>) => T | undefined =
   WeakRef.prototype.deref.call.bind(WeakRef.prototype.deref) as any;
 const isObject = (a: any): boolean =>
   typeof a === "object" || typeof a === "function" || typeof a === "symbol";
+const array: any = (...args: any[]) => args;
 export class Reactor {
   readonly #coreMap: WeakMap<WeakKey, Core> = new WeakMap();
   readonly #coreMapGet: (a: WeakKey) => Core | undefined =
@@ -82,11 +83,9 @@ export class Reactor {
           },
       {
         get: (target, p, receiver) => {
-          const packet: ObjectRefPacket = this.#socket([
-            1,
-            a,
-            ...this.#getObjectRef(p),
-          ]);
+          const packet: ObjectRefPacket = this.#socket(
+            array(1, a, ...this.#getObjectRef(p))
+          );
           return this.#proxyPacket(packet);
         },
       }
@@ -107,7 +106,13 @@ export class Reactor {
         case 1:
           const obj = deref(this.#objects[msg[1]]);
           return this.#getObjectRef(
-            obj?.[this.#getObjectFromRef((((_0: any, _1: any, ...args: ObjectRefPacket) => args) as any)(...msg))]
+            obj?.[
+              this.#getObjectFromRef(
+                (((_0: any, _1: any, ...args: ObjectRefPacket) => args) as any)(
+                  ...msg
+                )
+              )
+            ]
           );
       }
     };
