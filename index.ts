@@ -159,35 +159,35 @@ export class Reactor {
       );
     return process(value);
   }
+  #newFuncProxy(a: string) {
+    const r = this;
+    return function (this: any, ...args: any[]) {
+      const self = this;
+      const target = new.target;
+      const packet = r.#socket(
+        array(
+          3,
+          a,
+          ...[
+            ...skip(r.#getObjectRef(self)),
+            ...skip(r.#getObjectRef(target)),
+            ...(function* () {
+              for (var arg of skip(args))
+                for (var packet of skip(r.#getObjectRef(arg))) yield packet;
+            })(),
+          ]
+        )
+      );
+      return r.#unsyncMap(packet, (a) => r.#proxyPacket(a));
+    };
+  }
   #newProxy(a: string, type: ObjTy) {
     const d =
       a in this.#remoteObjects ? deref(this.#remoteObjects[a]) : undefined;
     if (d !== undefined) return d;
     this.#holdRemoteObject(a);
     const proxy = new _Proxy(
-      type === "object"
-        ? { __proto__: null }
-        : ((r) =>
-            function (this: any, ...args: any[]) {
-              const self = this;
-              const target = new.target;
-              const packet = r.#socket(
-                array(
-                  3,
-                  a,
-                  ...[
-                    ...skip(r.#getObjectRef(self)),
-                    ...skip(r.#getObjectRef(target)),
-                    ...(function* () {
-                      for (var arg of skip(args))
-                        for (var packet of skip(r.#getObjectRef(arg)))
-                          yield packet;
-                    })(),
-                  ]
-                )
-              );
-              return r.#unsyncMap(packet, (a) => r.#proxyPacket(a));
-            })(this),
+      type === "object" ? { __proto__: null } : this.#newFuncProxy(a),
       {
         get: (target, p, receiver) => {
           const packet: ObjectRefPacket = this.#socket(
