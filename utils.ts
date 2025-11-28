@@ -24,3 +24,7 @@ export function* skip<T, A extends T[]>(
   }
 }
 export const { set, apply, construct } = Reflect;
+export function freezeClass(k: { prototype: any }) {
+  Object.freeze(k);
+  Object.freeze(k.prototype);
+}

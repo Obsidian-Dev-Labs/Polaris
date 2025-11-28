@@ -13,6 +13,7 @@ import {
   array,
   set,
   skip,
+  freezeClass,
 } from "./utils.ts";
 type ObjTy = "object" | "function" | "symbol";
 type Core =
@@ -28,8 +29,52 @@ type Packet =
   | [1, string, ...ObjectRefPacket]
   | [2, string, ...ObjectRefPacket, ...ObjectRefPacket]
   | [3, string, ...ObjectRefPacket, ...ObjectRefPacket, ...ObjectRefPackets];
-
+export class Promises {
+  readonly #promiseObjects: WeakSet<Promise<any>> = new WeakSet();
+  readonly #promiseObjectsHas: (v: Promise<any>) => boolean =
+    this.#promiseObjects.has.bind(this.#promiseObjects);
+  readonly #promiseObjectsAdd: (v: Promise<any>) => void =
+    this.#promiseObjects.add.bind(this.#promiseObjects);
+  #deferredPromise<T>(a: Promise<T>): Promise<T> {
+    const proxy = new _Proxy(a, {
+      get: (target, p, receiver) =>
+        p === "then"
+          ? target.then
+          : this.#deferredPromise(
+              then(target, (v: any) => v[p]) as Promise<any>
+            ),
+      apply: (target, self, args) =>
+        this.#deferredPromise(
+          then(target, (v: any) => apply(v, self, args)) as Promise<any>
+        ),
+      construct: (target, args, new_target) =>
+        this.#deferredPromise(
+          then(target, (v: any) =>
+            construct(v, args, new_target)
+          ) as Promise<any>
+        ),
+    });
+    this.#promiseObjectsAdd(proxy);
+    return proxy;
+  }
+  get deferredPromise() {
+    return <T>(a: Promise<T>) => this.#deferredPromise(a);
+  }
+  get promiseObjectsHas() {
+    return this.#promiseObjectsHas;
+  }
+  get promiseObjectsAdd() {
+    return this.#promiseObjectsAdd;
+  }
+  static {
+    freezeClass(Promises);
+  }
+}
 export class Reactor {
+  readonly #promises: Promises;
+  get promises() {
+    return this.#promises;
+  }
   readonly #unsync: boolean;
   readonly #coreMap: WeakMap<WeakKey, Core> = new WeakMap();
   readonly #coreMapGet: (a: WeakKey) => Core | undefined =
@@ -37,11 +82,7 @@ export class Reactor {
   readonly #coreMapSet: (a: WeakKey, c: Core) => void = this.#coreMap.set.bind(
     this.#coreMap
   );
-  readonly #promiseObjects: WeakSet<Promise<any>> = new WeakSet();
-  readonly #promiseObjectsHas: (v: Promise<any>) => boolean =
-    this.#promiseObjects.has.bind(this.#promiseObjects);
-  readonly #promiseObjectsAdd: (v: Promise<any>) => void =
-    this.#promiseObjects.add.bind(this.#promiseObjects);
+
   readonly #remoteReg = new FinalizationRegistry<string>((a) =>
     this.#releaseRemoteObject(a)
   );
@@ -122,31 +163,10 @@ export class Reactor {
   #proxyPacket(packet: ObjectRefPacket): any {
     for (var x of this.#proxyPackets(packet)) return x;
   }
-  #deferredPromise<T>(a: Promise<T>): Promise<T> {
-    const proxy = new _Proxy(a, {
-      get: (target, p, receiver) =>
-        p === "then"
-          ? target.then
-          : this.#deferredPromise(
-              then(target, (v: any) => v[p]) as Promise<any>
-            ),
-      apply: (target, self, args) =>
-        this.#deferredPromise(
-          then(target, (v: any) => apply(v, self, args)) as Promise<any>
-        ),
-      construct: (target, args, new_target) =>
-        this.#deferredPromise(
-          then(target, (v: any) =>
-            construct(v, args, new_target)
-          ) as Promise<any>
-        ),
-    });
-    this.#promiseObjectsAdd(proxy);
-    return proxy;
-  }
+
   #unsyncMap<T>(value: any, process: (value: any) => T): T | Promise<T> {
     if (this.#unsync)
-      return this.#deferredPromise(
+      return this.#promises.deferredPromise(
         then(value, (a: any) => process(a)) as Promise<T>
       );
     return process(value);
@@ -207,10 +227,14 @@ export class Reactor {
   }
   constructor(
     socket: (msg: Packet) => any,
-    { unsync = false }: { unsync?: boolean } = {}
+    {
+      unsync = false,
+      promises = new Promises(),
+    }: { unsync?: boolean; promises?: Promises } = {}
   ) {
     this.#socket = socket;
     this.#unsync = unsync;
+    this.#promises = promises;
   }
   #coreHandler = (msg: Packet) => {
     switch (msg[0]) {
@@ -228,7 +252,7 @@ export class Reactor {
             const x =
               obj?.[this.#proxyPacket([...skip(msg, 2)] as ObjectRefPacket)];
             return this.#getObjectRef(
-              isObject(x) && this.#promiseObjectsHas(x) ? await x : x
+              isObject(x) && this.#promises.promiseObjectsHas(x) ? await x : x
             );
           }
           case 2: {
@@ -246,7 +270,7 @@ export class Reactor {
                 ? apply(obj, self, args)
                 : construct(obj, args, new_target);
             return this.#getObjectRef(
-              isObject(x) && this.#promiseObjectsHas(x) ? await x : x
+              isObject(x) && this.#promises.promiseObjectsHas(x) ? await x : x
             );
           }
           default:
@@ -283,5 +307,8 @@ export class Reactor {
         }
       };
     }
+  }
+  static {
+    freezeClass(Reactor);
   }
 }
