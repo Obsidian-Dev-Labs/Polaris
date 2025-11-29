@@ -5,7 +5,7 @@ import {
   _WeakRef,
   _catch,
   _finally,
-  then,
+  _then,
   isObject,
   deref,
   apply,
@@ -15,16 +15,17 @@ import {
   skip,
   freezeClass,
 } from "./utils.ts";
-type ObjTy = "object" | "function" | "symbol";
+
+export type ObjTy = "object" | "function" | "symbol";
 type Core =
   | { local: string; type: ObjTy }
   | { remote: string; remote_type: ObjTy };
-type ObjectRefPacket =
+export type ObjectRefPacket =
   | [0, ObjTy, string]
   | [1, string | number | boolean | null | undefined]
   | [2, ObjTy, string];
-type ObjectRefPackets = any[]; //TODO: fix
-type Packet =
+export type ObjectRefPackets = any[]; //TODO: fix
+export type Packet =
   | [0, boolean, string]
   | [1, string, ...ObjectRefPacket]
   | [2, string, ...ObjectRefPacket, ...ObjectRefPacket]
@@ -41,15 +42,15 @@ export class Promises {
         p === "then"
           ? target.then
           : this.#deferredPromise(
-              then(target, (v: any) => v[p]) as Promise<any>
+              _then(target, (v: any) => v[p]) as Promise<any>
             ),
       apply: (target, self, args) =>
         this.#deferredPromise(
-          then(target, (v: any) => apply(v, self, args)) as Promise<any>
+          _then(target, (v: any) => apply(v, self, args)) as Promise<any>
         ),
       construct: (target, args, new_target) =>
         this.#deferredPromise(
-          then(target, (v: any) =>
+          _then(target, (v: any) =>
             construct(v, args, new_target)
           ) as Promise<any>
         ),
@@ -66,10 +67,9 @@ export class Promises {
   get promiseObjectsAdd() {
     return this.#promiseObjectsAdd;
   }
-  static {
-    freezeClass(Promises);
-  }
 }
+
+freezeClass(Promises);
 export class Reactor {
   readonly #promises: Promises;
   get promises() {
@@ -167,7 +167,7 @@ export class Reactor {
   #unsyncMap<T>(value: any, process: (value: any) => T): T | Promise<T> {
     if (this.#unsync)
       return this.#promises.deferredPromise(
-        then(value, (a: any) => process(a)) as Promise<T>
+        _then(value, (a: any) => process(a)) as Promise<T>
       );
     return process(value);
   }
@@ -308,7 +308,5 @@ export class Reactor {
       };
     }
   }
-  static {
-    freezeClass(Reactor);
-  }
 }
+freezeClass(Reactor);

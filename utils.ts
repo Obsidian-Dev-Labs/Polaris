@@ -2,7 +2,9 @@ export const rand = crypto.randomUUID.bind(crypto);
 export const _WeakRef = WeakRef;
 export const _Proxy = Proxy;
 export const _Promise = Promise;
-export const then = _Promise.prototype.then.call.bind(_Promise.prototype.then);
+
+export const _then = _Promise.prototype.then.call.bind(_Promise.prototype.then);
+
 export const _catch = _Promise.prototype.catch.call.bind(
   _Promise.prototype.catch
 );
