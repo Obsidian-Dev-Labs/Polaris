@@ -72,6 +72,7 @@ export class Promises {
 freezeClass(Promises);
 export class Reactor {
   readonly #promises: Promises;
+  readonly #randomizer: () => string;
   get promises() {
     return this.#promises;
   }
@@ -105,7 +106,7 @@ export class Reactor {
         if ("remote" in g) return [2, g.remote_type, g.remote];
         return [0, g.type, g.local];
       }
-      const s = rand();
+      const s = this.#randomizer();
       this.#coreMapSet(a, {
         local: ((this.#objects[s] = new _WeakRef(a)), s),
         type: typeof a as ObjTy,
@@ -230,11 +231,13 @@ export class Reactor {
     {
       unsync = false,
       promises = new Promises(),
-    }: { unsync?: boolean; promises?: Promises } = {}
+      rand: randomizer = rand,
+    }: { unsync?: boolean; promises?: Promises; rand?: () => string } = {}
   ) {
     this.#socket = socket;
     this.#unsync = unsync;
     this.#promises = promises;
+    this.#randomizer = randomizer;
   }
   #coreHandler = (msg: Packet) => {
     switch (msg[0]) {
