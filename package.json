@@ -2,14 +2,15 @@
   "name": "Polaris",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "./dist/index.cjs",
   "zshy": {
     "exports": {
       ".": "./index.ts"
     }
   },
   "scripts": {
-    "test": "vitest"
+    "test": "vitest",
+    "build": "pnpx zshy"
   },
   "keywords": [],
   "author": "",
@@ -23,5 +24,17 @@
     "typescript": "^5.9.3",
     "vitest": "^4.0.14",
     "zshy": "^0.6.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.cts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.cts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
   }
 }
