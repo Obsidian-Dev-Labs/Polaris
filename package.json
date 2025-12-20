@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "zshy": {
+    "exports": {
+      ".": "./index.ts"
+    }
+  },
   "scripts": {
     "test": "vitest"
   },

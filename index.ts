@@ -14,7 +14,7 @@ import {
   set,
   skip,
   freezeClass,
-} from "./utils.ts";
+} from "./utils";
 
 export type ObjTy = "object" | "function" | "symbol";
 type Core =
@@ -42,8 +42,8 @@ export class Promises {
         p === "then"
           ? target.then
           : this.#deferredPromise(
-              _then(target, (v: any) => v[p]) as Promise<any>
-            ),
+            _then(target, (v: any) => v[p]) as Promise<any>
+          ),
       apply: (target, self, args) =>
         this.#deferredPromise(
           _then(target, (v: any) => apply(v, self, args)) as Promise<any>
@@ -115,6 +115,15 @@ export class Reactor {
     } else {
       return [1, a];
     }
+  }
+  get getObjectRef() {
+    return (a: any) => this.#getObjectRef(a);
+  }
+  get getObjectFromRef() {
+    return (a: ObjectRefPacket) => this.#getObjectFromRef(a);
+  }
+  get proxyPacket() {
+    return (a: ObjectRefPacket) => this.#proxyPacket(a);
   }
   *#getObjectsFromRef(packet: ObjectRefPackets): Generator<any, void, void> {
     let i = 0;
