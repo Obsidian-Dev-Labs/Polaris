@@ -6,7 +6,8 @@
   "zshy": {
     "exports": {
       ".": "./index.ts"
-    }
+    },
+    "noEmit": true
   },
   "scripts": {
     "test": "vitest",
@@ -26,7 +27,7 @@
     "zshy": "^0.6.0"
   },
   "files": [
-    "dist"
+    "**"
   ],
   "module": "./dist/index.js",
   "types": "./dist/index.d.cts",
