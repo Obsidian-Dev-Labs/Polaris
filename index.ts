@@ -1,3 +1,4 @@
+import { Promises } from "./promises";
 import {
   rand,
   _Promise,
@@ -14,12 +15,13 @@ import {
   set,
   skip,
   freezeClass,
+  freeze,
 } from "./utils";
 
 export type ObjTy = "object" | "function" | "symbol";
 type Core =
-  | { local: string; type: ObjTy }
-  | { remote: string; remote_type: ObjTy };
+  | { __proto__: null; local: string; type: ObjTy }
+  | { __proto__: null; remote: string; remote_type: ObjTy };
 export type ObjectRefPacket =
   | [0, ObjTy, string]
   | [1, string | number | boolean | null | undefined]
@@ -30,46 +32,7 @@ export type Packet =
   | [1, string, ...ObjectRefPacket]
   | [2, string, ...ObjectRefPacket, ...ObjectRefPacket]
   | [3, string, ...ObjectRefPacket, ...ObjectRefPacket, ...ObjectRefPackets];
-export class Promises {
-  readonly #promiseObjects: WeakSet<Promise<any>> = new WeakSet();
-  readonly #promiseObjectsHas: (v: Promise<any>) => boolean =
-    this.#promiseObjects.has.bind(this.#promiseObjects);
-  readonly #promiseObjectsAdd: (v: Promise<any>) => void =
-    this.#promiseObjects.add.bind(this.#promiseObjects);
-  #deferredPromise<T>(a: Promise<T>): Promise<T> {
-    const proxy = new _Proxy(a, {
-      get: (target, p, receiver) =>
-        p === "then"
-          ? target.then
-          : this.#deferredPromise(
-            _then(target, (v: any) => v[p]) as Promise<any>
-          ),
-      apply: (target, self, args) =>
-        this.#deferredPromise(
-          _then(target, (v: any) => apply(v, self, args)) as Promise<any>
-        ),
-      construct: (target, args, new_target) =>
-        this.#deferredPromise(
-          _then(target, (v: any) =>
-            construct(v, args, new_target)
-          ) as Promise<any>
-        ),
-    });
-    this.#promiseObjectsAdd(proxy);
-    return proxy;
-  }
-  get deferredPromise() {
-    return <T>(a: Promise<T>) => this.#deferredPromise(a);
-  }
-  get promiseObjectsHas() {
-    return this.#promiseObjectsHas;
-  }
-  get promiseObjectsAdd() {
-    return this.#promiseObjectsAdd;
-  }
-}
 
-freezeClass(Promises);
 export class Reactor {
   readonly #promises: Promises;
   readonly #randomizer: () => string;
@@ -107,10 +70,11 @@ export class Reactor {
         return [0, g.type, g.local];
       }
       const s = this.#randomizer();
-      this.#coreMapSet(a, {
+      this.#coreMapSet(a, freeze({
+         __proto__: null,
         local: ((this.#objects[s] = new _WeakRef(a)), s),
         type: typeof a as ObjTy,
-      });
+      }));
       return [0, typeof a as ObjTy, s];
     } else {
       return [1, a];
@@ -183,7 +147,7 @@ export class Reactor {
   }
   #newFuncProxy(a: string) {
     const r = this;
-    return function (this: any, ...args: any[]) {
+    const f = function (this: any, ...args: any[]) {
       const self = this;
       const target = new.target;
       const packet = r.#socket(
@@ -202,6 +166,8 @@ export class Reactor {
       );
       return r.#unsyncMap(packet, (a) => r.#proxyPacket(a));
     };
+    f.__proto__ = null;
+    return f;
   }
   #newProxy(a: string, type: ObjTy) {
     const d =
@@ -232,7 +198,7 @@ export class Reactor {
     );
     this.#remoteObjects[a] = new _WeakRef(proxy);
     this.#remoteRegister(proxy, a);
-    this.#coreMapSet(proxy, { remote: a, remote_type: type });
+    this.#coreMapSet(proxy, freeze({ __proto__: null,remote: a, remote_type: type }));
     return proxy;
   }
   constructor(
