@@ -25,7 +25,7 @@ export class Promises {
     const proxy = new _Proxy(a, {
       get: (target, p, receiver) =>
         p === "then"
-          ? target.then
+          ? (...args: any[]) => _then(target,...args)
           : this.#deferredPromise(
             _then(target, (v: any) => v[p]) as Promise<any>
           ),
