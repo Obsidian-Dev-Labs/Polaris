@@ -219,6 +219,8 @@ export class Reactor {
       case 0:
         (msg[1] ? this.#holdObject : this.#releaseObject)(msg[2]);
         return;
+        default:
+          throw `unknown packet type`;
     }
   };
   handler({ unsync = this.#unsync }: { unsync?: boolean } = {}) {

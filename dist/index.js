@@ -1,30 +1,5 @@
-import { rand, _Proxy, _WeakRef, _then, isObject, deref, apply, construct, array, set, skip, freezeClass, } from "./utils.js";
-export class Promises {
-    #promiseObjects = new WeakSet();
-    #promiseObjectsHas = this.#promiseObjects.has.bind(this.#promiseObjects);
-    #promiseObjectsAdd = this.#promiseObjects.add.bind(this.#promiseObjects);
-    #deferredPromise(a) {
-        const proxy = new _Proxy(a, {
-            get: (target, p, receiver) => p === "then"
-                ? target.then
-                : this.#deferredPromise(_then(target, (v) => v[p])),
-            apply: (target, self, args) => this.#deferredPromise(_then(target, (v) => apply(v, self, args))),
-            construct: (target, args, new_target) => this.#deferredPromise(_then(target, (v) => construct(v, args, new_target))),
-        });
-        this.#promiseObjectsAdd(proxy);
-        return proxy;
-    }
-    get deferredPromise() {
-        return (a) => this.#deferredPromise(a);
-    }
-    get promiseObjectsHas() {
-        return this.#promiseObjectsHas;
-    }
-    get promiseObjectsAdd() {
-        return this.#promiseObjectsAdd;
-    }
-}
-freezeClass(Promises);
+import { Promises } from "./promises.js";
+import { rand, _Proxy, _WeakRef, _then, isObject, deref, apply, construct, array, set, skip, freezeClass, freeze, } from "./utils.js";
 export class Reactor {
     #promises;
     #randomizer;
@@ -56,10 +31,11 @@ export class Reactor {
                 return [0, g.type, g.local];
             }
             const s = this.#randomizer();
-            this.#coreMapSet(a, {
+            this.#coreMapSet(a, freeze({
+                __proto__: null,
                 local: ((this.#objects[s] = new _WeakRef(a)), s),
                 type: typeof a,
-            });
+            }));
             return [0, typeof a, s];
         }
         else {
@@ -132,7 +108,7 @@ export class Reactor {
     }
     #newFuncProxy(a) {
         const r = this;
-        return function (...args) {
+        const f = function (...args) {
             const self = this;
             const target = new.target;
             const packet = r.#socket(array(3, a, ...[
@@ -146,6 +122,8 @@ export class Reactor {
             ]));
             return r.#unsyncMap(packet, (a) => r.#proxyPacket(a));
         };
+        f.__proto__ = null;
+        return f;
     }
     #newProxy(a, type) {
         const d = a in this.#remoteObjects ? deref(this.#remoteObjects[a]) : undefined;
@@ -164,7 +142,7 @@ export class Reactor {
         });
         this.#remoteObjects[a] = new _WeakRef(proxy);
         this.#remoteRegister(proxy, a);
-        this.#coreMapSet(proxy, { remote: a, remote_type: type });
+        this.#coreMapSet(proxy, freeze({ __proto__: null, remote: a, remote_type: type }));
         return proxy;
     }
     constructor(socket, { unsync = false, promises = new Promises(), rand: randomizer = rand, } = {}) {
@@ -178,6 +156,8 @@ export class Reactor {
             case 0:
                 (msg[1] ? this.#holdObject : this.#releaseObject)(msg[2]);
                 return;
+            default:
+                throw `unknown packet type`;
         }
     };
     handler({ unsync = this.#unsync } = {}) {
