@@ -21,6 +21,7 @@ export declare const freeze: {
     }, U extends string | bigint | number | boolean | symbol>(o: T): Readonly<T>;
     <T>(o: T): Readonly<T>;
 };
+export declare const isArray: (arg: any) => arg is any[];
 export declare function freezeClass(k: {
     prototype: any;
 }): void;

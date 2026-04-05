@@ -20,6 +20,7 @@ export function* skip(a, n = 0) {
 }
 export const { set, apply, construct } = Reflect;
 export const { freeze } = Object;
+export const { isArray } = Array;
 export function freezeClass(k) {
     freeze(k);
     freeze(k.prototype);

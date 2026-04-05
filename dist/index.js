@@ -1,5 +1,5 @@
 import { Promises } from "./promises.js";
-import { rand, _Proxy, _WeakRef, _then, isObject, deref, apply, construct, array, set, skip, freezeClass, freeze, } from "./utils.js";
+import { rand, _Promise, _Proxy, _WeakRef, _then, isObject, deref, apply, construct, array, set, skip, freezeClass, freeze, } from "./utils.js";
 export class Reactor {
     #promises;
     #randomizer;
@@ -95,7 +95,7 @@ export class Reactor {
             return x;
     }
     #unsyncMap(value, process) {
-        if (this.#unsync)
+        if (this.#unsync && value instanceof _Promise)
             return this.#promises.deferredPromise(_then(value, (a) => process(a)));
         return process(value);
     }

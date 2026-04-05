@@ -132,7 +132,7 @@ export class Reactor {
   }
 
   #unsyncMap<T>(value: any, process: (value: any) => T): T | Promise<T> {
-    if (this.#unsync)
+    if (this.#unsync && value instanceof _Promise)
       return this.#promises.deferredPromise(
         _then(value, (a: any) => process(a)) as Promise<T>
       );
