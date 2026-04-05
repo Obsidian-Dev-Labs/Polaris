@@ -2,7 +2,7 @@ import { Promises } from "./promises.js";
 export type ObjTy = "object" | "function" | "symbol";
 export type ObjectRefPacket = [0, ObjTy, string] | [1, string | number | boolean | null | undefined] | [2, ObjTy, string];
 export type ObjectRefPackets = any[];
-export type Packet = [0, boolean, string] | [1, string, ...ObjectRefPacket] | [2, string, ...ObjectRefPacket, ...ObjectRefPacket] | [3, string, ...ObjectRefPacket, ...ObjectRefPacket, ...ObjectRefPackets];
+export type Packet = [0, string] | [1, string, ...ObjectRefPacket] | [2, string, ...ObjectRefPacket, ...ObjectRefPacket] | [3, string, ...ObjectRefPacket, ...ObjectRefPacket, ...ObjectRefPackets];
 export declare class Reactor {
     #private;
     get promises(): Promises;

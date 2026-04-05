@@ -28,7 +28,7 @@ export type ObjectRefPacket =
   | [2, ObjTy, string];
 export type ObjectRefPackets = any[]; //TODO: fix
 export type Packet =
-  | [0, boolean, string]
+  | [0,string]
   | [1, string, ...ObjectRefPacket]
   | [2, string, ...ObjectRefPacket, ...ObjectRefPacket]
   | [3, string, ...ObjectRefPacket, ...ObjectRefPacket, ...ObjectRefPackets];
@@ -53,14 +53,10 @@ export class Reactor {
   readonly #remoteRegister: (a: WeakKey, x: string) => void =
     this.#remoteReg.register.bind(this.#remoteReg);
   #socket: (msg: any) => any;
-  #objects: { [a: string]: WeakRef<any> } = Object.create(null);
+  #objects: { [a: string]: any } = Object.create(null);
   #remoteObjects: { [a: string]: WeakRef<any> } = Object.create(null);
-  #heldObjects: { [a: string]: any } = Object.create(null);
-  readonly #holdObject = (a: string) => {
-    this.#heldObjects[a] ??= deref(this.#objects[a]);
-  };
   readonly #releaseObject = (a: string) => {
-    delete this.#heldObjects[a];
+    delete this.#objects[a];
   };
   #getObjectRef(a: any): ObjectRefPacket {
     if (isObject(a)) {
@@ -110,11 +106,8 @@ export class Reactor {
   #getObjectFromRef(packet: ObjectRefPacket): any {
     for (var x of this.#getObjectsFromRef(packet)) return x;
   }
-  #holdRemoteObject(a: string) {
-    this.#socket([0, true, a]);
-  }
   #releaseRemoteObject(a: string) {
-    this.#socket([0, false, a]);
+    this.#socket([0, a]);
   }
   *#proxyPackets(packet: ObjectRefPackets): Generator<any, void, void> {
     let i = 0;
@@ -173,7 +166,6 @@ export class Reactor {
     const d =
       a in this.#remoteObjects ? deref(this.#remoteObjects[a]) : undefined;
     if (d !== undefined) return d;
-    this.#holdRemoteObject(a);
     const proxy = new _Proxy(
       type === "object" ? { __proto__: null } : this.#newFuncProxy(a),
       {
@@ -217,7 +209,7 @@ export class Reactor {
   #coreHandler = (msg: Packet) => {
     switch (msg[0]) {
       case 0:
-        (msg[1] ? this.#holdObject : this.#releaseObject)(msg[2]);
+        this.#releaseObject(msg[1]);
         return;
         default:
           throw `unknown packet type`;
@@ -228,7 +220,7 @@ export class Reactor {
       return async (msg: Packet) => {
         switch (msg[0]) {
           case 1: {
-            const obj = deref(this.#objects[msg[1]]);
+            const obj = this.#objects[msg[1]];
             const x =
               obj?.[this.#proxyPacket([...skip(msg, 2)] as ObjectRefPacket)];
             return this.#getObjectRef(
@@ -236,12 +228,12 @@ export class Reactor {
             );
           }
           case 2: {
-            const obj = deref(this.#objects[msg[1]]);
+            const obj = this.#objects[msg[1]];
             const [mem, val] = this.#proxyPackets([...skip(msg, 2)]);
             return set(obj, mem, val);
           }
           case 3: {
-            const obj = deref(this.#objects[msg[1]]);
+            const obj = this.#objects[msg[1]];
             const [self, new_target, ...args] = this.#proxyPackets([
               ...skip(msg, 2),
             ]);
@@ -261,18 +253,18 @@ export class Reactor {
       return (msg: Packet) => {
         switch (msg[0]) {
           case 1: {
-            const obj = deref(this.#objects[msg[1]]);
+            const obj = this.#objects[msg[1]];
             return this.#getObjectRef(
               obj?.[this.#proxyPacket([...skip(msg, 2)] as ObjectRefPacket)]
             );
           }
           case 2: {
-            const obj = deref(this.#objects[msg[1]]);
+            const obj = this.#objects[msg[1]];
             const [mem, val] = this.#proxyPackets([...skip(msg, 2)]);
             return set(obj, mem, val);
           }
           case 3: {
-            const obj = deref(this.#objects[msg[1]]);
+            const obj = this.#objects[msg[1]];
             const [self, new_target, ...args] = this.#proxyPackets([
               ...skip(msg, 2),
             ]);
